@@ -20,45 +20,79 @@ import com.qaprosoft.carina.core.foundation.utils.Configuration.Parameter;
 public class CustomJiraUpdater implements IJiraUpdater
 {
 	protected static final Logger LOG = Logger.getLogger(CustomJiraUpdater.class);
-	
+
+	private static final String SEARCH_CRITERIA = "project='%s' AND summary~'%s'";
+
 	@Override
-	public void updateAfterTest(JiraClient jira, ITestResult result) 
+	public void updateAfterTest(JiraClient jira, ITestResult result)
 	{
+		if (!isConfigValid())
+			return;
 		try
 		{
-			String description = result.getMethod().getDescription();
+			String jiraTicket = EmailReportItemCollector.pull(result).getJiraTicket();
 			// Check if test description has JIRA id
-			if(!StringUtils.isEmpty(description) && description.contains("JIRA#"))
+			if (jiraTicket != null)
 			{
-				String id = description.split("#")[1];
-				// Retrieve Jira issue using client
-				Issue issue = jira.getIssue(id);
-				if("Done".equals(issue.getStatus().getName()))
+				Issue issue = jira.getIssue(jiraTicket);
+				addComment(issue, result);
+			}
+			else
+			{
+				Issue.SearchResult sr = jira.searchIssues(String.format(SEARCH_CRITERIA,
+						Configuration.get(Parameter.JIRA_PROJECT), TestNamingUtil.getCanonicalTestName(result)));
+
+				if (sr.issues.isEmpty() && Configuration.getBoolean(Parameter.JIRA_CREATE_NEW_TICKET))
 				{
-					// Reopen issue
-					issue.transition().execute("Reopen and start progress");
+					if (result.getStatus() != 1)
+					{
+						Issue newIssue = jira.createIssue(Configuration.get(Parameter.JIRA_PROJECT_SHORT), "Bug")
+								.field(Field.SUMMARY, TestNamingUtil.getCanonicalTestName(result))
+								.execute();
+						EmailReportItemCollector.pull(result).setJiraTicket(newIssue.getKey());
+						addComment(newIssue, result);
+					}
 				}
-				String date = new SimpleDateFormat(Configuration.get(Parameter.DATE_FORMAT)).format(new Date());
-				// PASS
-				if(result.getStatus() == 1)
+				else if (!sr.issues.isEmpty())
 				{
-					// If test passed - press done, and add comment
-					issue.transition().execute("Done");
-					issue.addComment("PASSED at " + date);
-				}
-				// FAIL
-				else
-				{
-					// If test failed - populated description with details and add comment
-					issue.update().field(Field.DESCRIPTION, result.getThrowable().getMessage()).execute();
-					issue.addComment("FAILED at " + date);
+					EmailReportItemCollector.pull(result).setJiraTicket(sr.issues.get(0).getKey());
+					addComment(sr.issues.get(0), result);
 				}
 			}
-		}
-		catch(Exception e)
+		} catch (Exception e)
 		{
 			LOG.error("Jira status not updated: " + e.getMessage());
 		}
+	}
+
+	private void addComment(Issue issue, ITestResult result) throws JiraException
+	{
+		if ("Done".equals(issue.getStatus().getName()))
+		{
+			// Reopen issue
+			issue.transition().execute("Reopen and start progress");
+		}
+		String date = new SimpleDateFormat(Configuration.get(Parameter.DATE_FORMAT)).format(new Date());
+		// PASS
+		if (result.getStatus() == 1)
+		{
+			// If test passed - press done, and add comment
+			issue.transition().execute("Done");
+			issue.addComment("PASSED at " + date);
+		}
+		// FAIL
+		else
+		{
+			// If test failed - populated description with details and add comment
+			issue.update().field(Field.DESCRIPTION, result.getThrowable().getMessage()).execute();
+			issue.addComment("FAILED at " + date);
+		}
+	}
+
+	private boolean isConfigValid()
+	{
+		return !Configuration.isNull(Parameter.JIRA_URL) && !Configuration.isNull(Parameter.JIRA_USER)
+				&& !Configuration.isNull(Parameter.JIRA_PASSWORD);
 	}
 
 	@Override
