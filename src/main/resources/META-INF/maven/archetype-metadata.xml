@@ -9,20 +9,17 @@
 	</requiredProperties>
 
 	<fileSets>
-		<fileSet>
+		<fileSet filtered="true" packaged="true">
 			<directory>src/main/java</directory>
 		</fileSet>
-		<fileSet>
+		<fileSet filtered="false" packaged="false">
 			<directory>src/main/resources</directory>
 		</fileSet>
-		<fileSet>
+		<fileSet filtered="true" packaged="false">
 			<directory>src/test/resources</directory>
 		</fileSet>
-		<fileSet>
+		<fileSet filtered="true" packaged="true">
 			<directory>src/test/java</directory>
-		</fileSet>
-		<fileSet>
-			<directory>soap</directory>
 		</fileSet>
 	</fileSets>
 </archetype-descriptor>
